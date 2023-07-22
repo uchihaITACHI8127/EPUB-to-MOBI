@@ -1,0 +1,67 @@
+import os
+import logging
+from io import BytesIO
+from ebooklib import epub
+from telegram import Update, InputFile
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+
+# Set your Telegram bot token here
+BOT_TOKEN = "YOUR_BOT_TOKEN"
+
+# Enable logging (optional but helpful for debugging)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def start(update: Update, _: CallbackContext) -> None:
+    """Send a welcome message when the command /start is issued."""
+    update.message.reply_text("Hi! Send me an EPUB file, and I'll convert it to MOBI for you.")
+
+def convert_to_mobi(update: Update, _: CallbackContext) -> None:
+    """Convert EPUB file to MOBI and send it back to the user."""
+    # Check if the user sent a document
+    if not update.message.document:
+        update.message.reply_text("Please send an EPUB file.")
+        return
+
+    file_id = update.message.document.file_id
+    file_info = update.message.document.get_file()
+    file_buffer = BytesIO()
+    file_info.download(out=file_buffer)
+
+    # Check if the file is in EPUB format
+    if not file_info.file_path.lower().endswith(".epub"):
+        update.message.reply_text("The provided file is not in EPUB format.")
+        return
+
+    try:
+        # Perform the conversion to MOBI
+        book = epub.read_epub(file_buffer)
+        mobi_path = "/tmp/converted.mobi"  # You can customize the output path and filename here
+        epub.write_epub(mobi_path, book, {})
+        
+        # Send the converted MOBI file to the user
+        with open(mobi_path, "rb") as mobi_file:
+            update.message.reply_document(document=mobi_file)
+
+        # Clean up the temporary MOBI file
+        os.remove(mobi_path)
+
+    except Exception as e:
+        update.message.reply_text("An error occurred during the conversion.")
+        logger.error(f"Error converting EPUB to MOBI: {e}")
+
+def main() -> None:
+    """Start the bot."""
+    updater = Updater(BOT_TOKEN)
+    dispatcher = updater.dispatcher
+
+    # Handlers
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(MessageHandler(Filters.document.mime_type("application/epub+zip"), convert_to_mobi))
+
+    # Start the Bot
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == "__main__":
+    main()
